@@ -1,0 +1,6 @@
+nfldb*
+nflgame*
+*.txt
+venv
+*.md
+.idea/
