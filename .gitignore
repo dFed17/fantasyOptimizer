@@ -4,3 +4,4 @@ nflgame*
 venv
 *.md
 .idea/
+*.pyc
