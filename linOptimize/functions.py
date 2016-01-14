@@ -62,9 +62,15 @@ def calcFantasyScorePositional(player):
 
     return score
 
-def calcWeeklyWins(player1, player2):
+def calcWinForWeek(player1, player2):
     score1 = calcFantasyScorePositional(player1)
     score2 = calcFantasyScorePositional(player2)
+    if score1 > score2:
+        return True
+    elif score1 == score2:
+        if player1.player < player2.player:
+            return True
+    return False
 
 
 
@@ -288,107 +294,135 @@ def makeWinMatrix(players):
 
 
 
-class optiPlayer:
-    name = ''
-
-def makeWineMatrixAlt(players):
-
+def makeWinMatrixForWeek(players, week, first):
     db = nfldb.connect()
 
     # Get number of players in list
     size = len(players)
     playerInd = {}
-    playerIndString = {}
 
     ind = 0
+
+    if first:
+        print '\n index\tname'
+
+    for x in players:
+        x = x.split(' (')
+        if first:
+            print str(ind) + '\t' + x[0]
+
+        qd = nfldb.Query(db)
+        qd.game(season_year=2015, week=week, season_type='Regular')
+        pp = qd.player(full_name=x[0]).as_aggregate()
+        for p in pp:
+            playerInd[ind] = p
+        ind += 1
+
+    xcord = 0
     allWins = []
     allLoses = []
 
-    print '\n index\tname'
-    for i, x in enumerate(players):
-        x = x.split(' (')
-        print str(ind) + '\t' + x[0]
-        playerIndString[i] = x[0]
+    while xcord < size:
+        winsList = []
+        losesList = []
+        wasActive = False
+        if playerInd.has_key(xcord):
+            wasActive = True
+
+        loses = 0
+        ycord = 0
+        while ycord < size:
 
 
-    for i, x in enumerate(playerIndString):
-        for week in range(1,8):
 
-            qd = nfldb.Query(db)
-            qd.game(season_year=2015, week=week, season_type='Regular')
+            # Append a 0 for every position in the loses matrix
+            # Then replace diagonal position later
+            losesList.append(0)
+            if ycord == xcord:
+                winsList.append(0)
+                # Append 0 along diagonal in wins matrix
+            elif wasActive:
+                # Both players played
+                if playerInd.has_key(ycord):
+                    check = playerInd[xcord]
+                    against = playerInd[ycord]
 
-            # Get the player for which to calculate a row
-            # Must get every week
-            pp = qd.player( full_name=x.getValue() ).as_aggregate()
-            for x in pp:
-                    playerOut = x
-
-            for x in playerIndString:
-                qd2 = nfldb.Query(db)
-                qd2.game(season_year=2015, week=week, season_type='Regular')
-                print x
-                pp2 = qd.player( full_name=x.getValue() ).as_aggregate()
-
-                for x in pp2:
-                    playerIn= x
-                
-
-
-                ind += 1
-
-            xcord = 0
-
-
-            while xcord < size-1:
-                winsList = []
-                losesList = []
-                check = playerInd[xcord]
-                loses = 0
-                ycord = 0
-                while ycord<size-1:
-                    losesList.append(0)
-                    if ycord != xcord:
-                        against = playerInd[ycord]
-                        wins, loses = calcWins(check, against, loses)
-                        winsList.append(wins)
+                    if calcWinForWeek(check, against):
+                        winsList.append(1)
                     else:
                         winsList.append(0)
+                        loses += 1
+                else:
+                    # pdb.set_trace()
+                    winsList.append(1)
+            else:
+                # pdb.set_trace()
+                # Check player didn't play
+                winsList.append(0)
+                if playerInd.has_key(ycord):
+                    # against player did play
+                    loses+=1
 
-                    ycord += 1
-                losesList[xcord] = loses
-                rowWins = numpy.array([winsList])
-                rowLoses = numpy.array([losesList])
 
-                allWins.append(rowWins)
-                allLoses.append(rowLoses)
+            ycord += 1
+        losesList[xcord] = loses
 
-                xcord += 1
+
+        # check weekly invariants
+        # if winsList.count(0)-1 != loses:
+        #     pdb.set_trace()
+
+        rowWins = numpy.array([winsList])
+        rowLoses = numpy.array([losesList])
+
+        allWins.append(rowWins)
+        allLoses.append(rowLoses)
+
+        xcord += 1
 
     matrixWins = numpy.vstack(allWins)
     matrixLoses = numpy.vstack(allLoses)
-    print '---------- Wins ----------'
-    print(matrixWins)
-    print '---------- Loses ----------'
-    print(matrixLoses)
-
-
-    for i in range(0, size-1):
-
-        for j in range(i+1, size-1):
-            pass
-        pass
-
-
-
+    # print '---------- Wins ----------'
+    # # print(matrixWins)
+    # print '---------- Loses ----------'
+    # print(matrixLoses)
 
     return matrixWins, matrixLoses
+
+
+
+def getWeeklyMatrix(players, firstWeek, lastWeek):
+    size = len(players)
+    allWins = numpy.zeros( (size, size) )
+    allLoses= numpy.zeros( (size, size) )
+
+    first = True
+
+    for i in range(firstWeek, lastWeek+1):
+        weeklyWins, weeklyLoses = makeWinMatrixForWeek(players, i, first)
+        print "calculations for WEEK " + str(i)
+        first = False
+        if i > 13:
+            pdb.set_trace()
+        checkInvariantsFull(weeklyWins, weeklyLoses)
+        allWins = numpy.add( weeklyWins, allWins )
+        allLoses = numpy.add( weeklyLoses, allLoses )
+        # pdb.set_trace()
+
+
+    print '---------- Wins ----------'
+    print(allWins)
+    print '---------- Loses ----------'
+    print(allLoses)
+
+    return allWins, allLoses
 
 
 
 
 
 def getB(wins, loses):
-
+    checkInvariantsFull(wins, loses)
 
     invL = inv(numpy.matrix(loses))
 
@@ -401,16 +435,61 @@ def getB(wins, loses):
     print '\n + ---------- Eigenvalues ----------'
     print eVals
 
-    fairBets = eVecs[:,1]
+    fairBets = 'fairBets vector not found'
+
     count = 0
-    for w in eVals:
-        if w > 0:
+    foundFair = False
+    for val in eVals:
+        if val > 0:
             print count
-            print "Found fairbets"
+            if foundFair == True:
+                print "Too many positive eigenvalues"
+
+            print '\n + ---------- fairBets ----------'
             fairBets =  eVecs[:,count]
+            print eVecs[:,count]
+
+            foundFair = True
         count+=1
 
-    print '\n + ---------- fairBets ----------'
 
-    print fairBets
     return B
+
+
+def checkInvariantsFull(winsMatrix, losesMatrix):
+    rowsW, colsW = winsMatrix.shape
+
+    for i in range(0,colsW-1):
+        col = winsMatrix[:,i]
+        losesFromWins = col.sum()
+        loses = losesMatrix[i, i]
+        if losesFromWins != loses:
+            print i
+            losesMatrix[i,i] = losesFromWins
+
+def makeMatlab(wins):
+    rowsW, colsW = wins.shape
+    matlabString = '['
+    for i in range(0,rowsW):
+        # print 'row is ' + str(i)
+        for j in range(0, colsW):
+            # print '\tcolumn is ' + str(j)
+            matlabString = matlabString + ' ' + str(wins[i,j])
+            if j == 24:
+                print 'end of row'
+                matlabString = matlabString + ';'
+            else:
+                matlabString = matlabString + ','
+
+        if i == 24:
+            print 'end of matrix'
+            matlabString = matlabString + ']'
+
+
+    print matlabString
+
+
+
+
+
+
